@@ -8,43 +8,6 @@ import (
 	"strings"
 )
 
-// convertHeading handles the conversion of Markdown headings (e.g., # Heading) to HTML <h1> to <h6> tags.
-func convertHeading(line string) (string, error) {
-	for i := 6; i >= 1; i-- {
-		prefix := strings.Repeat("#", i) + " "
-		if strings.HasPrefix(line, prefix) {
-			content := strings.TrimPrefix(line, prefix)
-			return fmt.Sprintf("<h%d>%s</h%d>", i, content, i), nil
-		}
-	}
-	return "", nil
-}
-
-// convertLink handles the conversion of Markdown links ([text](url)) to HTML <a> tags.
-func convertLink(line string) (string, error) {
-	linkRegex := regexp.MustCompile(`\[(.+?)\]\((https?:\/\/.+?)\)`)
-	if linkRegex.MatchString(line) {
-		line = linkRegex.ReplaceAllString(line, `<a href="$2">$1</a>`)
-	}
-	return line, nil
-}
-
-// convertEllipsis handles ellipses (`...`) and returns them as-is.
-func convertEllipsis(line string) (string, error) {
-	if strings.TrimSpace(line) == "..." {
-		return "...", nil
-	}
-	return "", nil
-}
-
-// convertParagraph handles the conversion of any line to HTML <p> tags if it doesn't match any special case (e.g., heading or ellipsis).
-func convertParagraph(line string) (string, error) {
-	if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") && line != "..." {
-		return fmt.Sprintf("<p>%s</p>", line), nil
-	}
-	return "", nil
-}
-
 // ProcessFile reads and converts each line from the input file.
 func ProcessFile(filename string) error {
 	file, err := os.Open(filename)
@@ -62,16 +25,16 @@ func ProcessFile(filename string) error {
 	var currentParagraph strings.Builder
 
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := strings.TrimSpace(scanner.Text())
 
 		// Check for empty lines to finalize the current paragraph
-		if strings.TrimSpace(line) == "" {
+		if line == "" {
 			if currentParagraph.Len() > 0 {
+				// Finalize and append the current paragraph
 				outputLines = append(outputLines, fmt.Sprintf("<p>%s</p>", currentParagraph.String()))
 				currentParagraph.Reset()
 			}
-			// Preserve the empty line
-			outputLines = append(outputLines, "")
+			outputLines = append(outputLines, "") // Preserve the empty line
 			continue
 		}
 
@@ -82,7 +45,17 @@ func ProcessFile(filename string) error {
 			continue
 		}
 
-		// If the line is a block level element (e.g., heading, ellipses), finalize the current paragraph
+		// Handle standalone links separately
+		if isStandaloneLink(line) {
+			if currentParagraph.Len() > 0 {
+				outputLines = append(outputLines, fmt.Sprintf("<p>%s</p>", currentParagraph.String()))
+				currentParagraph.Reset()
+			}
+			outputLines = append(outputLines, converted)
+			continue
+		}
+
+		// If the line is a block-level element (e.g., heading, ellipses), finalize the current paragraph
 		if strings.HasPrefix(converted, "<h") || converted == "..." {
 			if currentParagraph.Len() > 0 {
 				outputLines = append(outputLines, fmt.Sprintf("<p>%s</p>", currentParagraph.String()))
@@ -138,11 +111,19 @@ func convertLine(line string) (string, error) {
 		}
 	}
 
-	// Convert links in regular paragraphs
-	line = convertInlineLinks(line)
+	// If it's a standalone link, return the link without wrapping it in <p> tags
+	if isStandaloneLink(line) {
+		return convertInlineLinks(line), nil
+	}
 
-	// Return the line as is, without wrapping in <p> tags
-	return line, nil
+	// Convert inline links for regular text
+	return convertInlineLinks(line), nil
+}
+
+// isStandaloneLink checks if the line is a standalone link (i.e., a link occupying the whole line).
+func isStandaloneLink(line string) bool {
+	linkRegex := regexp.MustCompile(`^\[.+?\]\(https?:\/\/.+?\)$`)
+	return linkRegex.MatchString(line)
 }
 
 // convertInlineLinks handles the conversion of Markdown links ([text](url)) to HTML <a> tags within a line.

@@ -7,123 +7,96 @@ import (
 	"testing"
 )
 
-// TestConvertHeading tests the conversion of Markdown headings to HTML headings.
-func TestConvertHeading(t *testing.T) {
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{"# Heading 1", "<h1>Heading 1</h1>"},
-		{"## Heading 2", "<h2>Heading 2</h2>"},
-		{"###### Heading 6", "<h6>Heading 6</h6>"},
-		{"#HeadingWithoutSpace", ""}, // Invalid, should return empty
-	}
-
-	for _, c := range cases {
-		result, _ := convertHeading(c.input)
-		if result != c.expected {
-			t.Errorf("convertHeading(%q) == %q, expected %q", c.input, result, c.expected)
-		}
-	}
-}
-
-// TestConvertLink tests the conversion of Markdown links to HTML links.
-func TestConvertLink(t *testing.T) {
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{"This is a [link](https://example.com)", "This is a <a href=\"https://example.com\">link</a>"},
-		{"Just text", "Just text"}, // No link, should remain the same
-	}
-
-	for _, c := range cases {
-		result, _ := convertLink(c.input)
-		if result != c.expected {
-			t.Errorf("convertLink(%q) == %q, expected %q", c.input, result, c.expected)
-		}
-	}
-}
-
-// TestConvertEllipsis tests the handling of ellipses.
-func TestConvertEllipsis(t *testing.T) {
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{"...", "..."},
-		{"Not an ellipsis", ""}, // Should return empty since it's not ellipsis
-	}
-
-	for _, c := range cases {
-		result, _ := convertEllipsis(c.input)
-		if result != c.expected {
-			t.Errorf("convertEllipsis(%q) == %q, expected %q", c.input, result, c.expected)
-		}
-	}
-}
-
-// TestConvertParagraph tests the conversion of text to HTML paragraphs.
-func TestConvertParagraph(t *testing.T) {
-	cases := []struct {
-		input    string
-		expected string
-	}{
-		{"This is a paragraph.", "<p>This is a paragraph.</p>"},
-		// Empty line should return empty
-		{"", ""},
-		// Ellipsis should not be wrapped in a paragraph
-		{"...", ""},
-		{"How are you?\nWhat's going on?", "<p>How are you?\nWhat's going on?</p>"},
-	}
-
-	for _, c := range cases {
-		result, _ := convertParagraph(c.input)
-		if result != c.expected {
-			t.Errorf("convertParagraph(%q) == %q, expected %q", c.input, result, c.expected)
-		}
-	}
-}
-
 // TestProcessFile tests the processing of a full file.
 func TestProcessFile(t *testing.T) {
-	// Create a temporary file with some markdown content
-	content := `# Title
+	// Create a test case struct
+	type testCase struct {
+		input    string
+		expected string
+	}
+
+	// Define test cases
+	testCases := []testCase{
+		{
+			input: `# Title
 This is sample markdown for the [Mailchimp](https://www.mailchimp.com) homework assignment.
 
 ...
 
-Another paragraph.`
-
-	expectedOutput := `<h1>Title</h1>
+Another paragraph.`,
+			expected: `<h1>Title</h1>
 <p>This is sample markdown for the <a href="https://www.mailchimp.com">Mailchimp</a> homework assignment.</p>
 
 ...
 
-<p>Another paragraph.</p>`
+<p>Another paragraph.</p>`,
+		},
+		{
+			input: `## Subtitle
+Just some text with a [link](https://example.com).
 
-	tmpFile := "test_sample.md"
-	err := os.WriteFile(tmpFile, []byte(content), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+...
+
+More text.`,
+			expected: `<h2>Subtitle</h2>
+<p>Just some text with a <a href="https://example.com">link</a>.</p>
+
+...
+
+<p>More text.</p>`,
+		},
+		{
+			input:    `[Standalone Link](https://example.com)`,
+			expected: `<a href="https://example.com">Standalone Link</a>`,
+		},
+		{
+			input:    `...`,
+			expected: `...`,
+		},
+		{
+			input: `# Heading
+This is another paragraph.`,
+			expected: `<h1>Heading</h1>
+<p>This is another paragraph.</p>`,
+		},
+		{
+			input: `Empty lines should be preserved.
+
+Another paragraph after empty lines.`,
+			expected: `<p>Empty lines should be preserved.</p>
+
+<p>Another paragraph after empty lines.</p>`,
+		},
 	}
-	defer os.Remove(tmpFile)
 
-	// Capture output
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	// Iterate over each test case
+	for _, tc := range testCases {
+		// Create a temporary file with the input markdown content
+		tmpFile := "test_sample.md"
+		err := os.WriteFile(tmpFile, []byte(tc.input), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create temp file: %v", err)
+		}
+		defer os.Remove(tmpFile) // Ensure the temporary file is removed
 
-	err = ProcessFile(tmpFile)
-	if err != nil {
-		t.Fatalf("ProcessFile failed: %v", err)
-	}
+		// Capture the output
+		old := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
 
-	w.Close()
-	out, _ := io.ReadAll(r)
-	os.Stdout = old
+		// Process the file
+		err = ProcessFile(tmpFile)
+		if err != nil {
+			t.Fatalf("ProcessFile failed: %v", err)
+		}
 
-	if strings.TrimSpace(string(out)) != strings.TrimSpace(expectedOutput) {
-		t.Errorf("ProcessFile output was incorrect, got: %s, want: %s", out, expectedOutput)
+		w.Close()
+		out, _ := io.ReadAll(r)
+		os.Stdout = old
+
+		// Compare the output with the expected result
+		if strings.TrimSpace(string(out)) != strings.TrimSpace(tc.expected) {
+			t.Errorf("ProcessFile output was incorrect, got: %s, want: %s", string(out), tc.expected)
+		}
 	}
 }
